@@ -17,14 +17,14 @@ void execute_unit_time(){
 }
 struct process* read_input(int* scheduling_policy_ptr, int* num_process_ptr){
 	char scheduling_policy_string[ MAX_STRING_LEN ];
-	if( scanf("%s", scheduling_policy_string) != 1 )  err_exit("First argument shall be the scheduling policy !!\n", ERR_EXIT);
+	if( scanf("%s", scheduling_policy_string) != 1 )  error_exit("First argument shall be the scheduling policy !!\n", ERR_EXIT);
 	if( strcmp(scheduling_policy_string, "FIFO") == 0 )  *scheduling_policy_ptr = POLICY_FIFO;
 	else if( strcmp(scheduling_policy_string, "RR") == 0 )  *scheduling_policy_ptr = POLICY_RR;
 	else if( strcmp(scheduling_policy_string, "SJF") == 0 )  *scheduling_policy_ptr = POLICY_SJF;
 	else if( strcmp(scheduling_policy_string, "PSJF") == 0 )  *scheduling_policy_ptr = POLICY_PSJF;
-	else  err_exit("No such scheduling policy !!\n", ERR_EXIT);
+	else  error_exit("No such scheduling policy !!\n", ERR_EXIT);
 
-	if( scanf("%d", num_process_ptr) != 1 )  err_exit("scanf number of processes error.\n", ERR_EXIT);
+	if( scanf("%d", num_process_ptr) != 1 )  error_exit("scanf number of processes error.\n", ERR_EXIT);
 
 	struct process* process_input = (struct process*)malloc( (*num_process_ptr) * sizeof(struct process) ); 
 	int tmp;
@@ -39,11 +39,11 @@ pid_t ready_process_execute(struct process process_input_1,
 int* call_child_fd_ptr, int* wait_child_fd_ptr ){  
 	int parent_to_child[2];
 	int child_to_parent[2];
-	if( pipe(parent_to_child) == (-1) )  err_exit("pipe() error!\n", ERR_EXIT);
-	if( pipe(child_to_parent) == (-1) )  err_exit("pipe() error!\n", ERR_EXIT);
+	if( pipe(parent_to_child) == (-1) )  error_exit("pipe() error!\n", ERR_EXIT);
+	if( pipe(child_to_parent) == (-1) )  error_exit("pipe() error!\n", ERR_EXIT);
 	
 	pid_t fork_pid = fork();
-	if(fork_pid < 0)  err_exit("fork() error in ready_process_execute() !!\n", ERR_EXIT);
+	if(fork_pid < 0)  error_exit("fork() error in ready_process_execute() !!\n", ERR_EXIT);
 	else if(fork_pid == 0){	
 		close(parent_to_child[1]);
 		close(child_to_parent[0]);
