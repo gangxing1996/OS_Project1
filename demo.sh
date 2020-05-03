@@ -1,2 +1,2 @@
- sudo dmesg --clear && clear
-sudo  ./scheduler < test/FIFO_1.txt && dmesg
+sudo dmesg --clear && clear
+sudo  ./main < OS_PJ1_Test/FIFO_1.txt && dmesg

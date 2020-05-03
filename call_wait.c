@@ -1,33 +1,26 @@
+//call_wait.c
 
-#include <unistd.h> //for pipe read and write
+#include <unistd.h> // read() write()
+#include <stdio.h> // fprintf(stderr)
 #include "common.h" 
-#include <stdio.h> 
-#define ERR_EXIT 1 
 
-
-
-void call_parent(int call_parent_fd)
-{
-	if( write(call_parent_fd, "c", 1) != 1 )  error_exit("call_parent() write() error!\n", ERR_EXIT);
+void call_child(int call_child_list){
+	if( write(call_child_list, "p", 1) != 1)  ERROR_EXIT("call_child()error!\n");
 }
 
-void wait_parent(int wait_parent_fd)
-{
+void wait_child(int wait_child_list){
 	char c;
-
-	if( read(wait_parent_fd, &c, 1) != 1 ){
-		error_exit("wait_parent() read() error!\n", ERR_EXIT);}
-	if( c != 'p' )  error_exit("wait_parent() wrong data!\n", ERR_EXIT);
+	if( read(wait_child_list, &c, 1) != 1 )  ERROR_EXIT("wait_child() error!\n");
+	if( c != 'c' )  ERROR_EXIT("wait_child() wrong input!\n");
 }
 
-void call_child(int call_child_fd)
-{
-	if( write(call_child_fd, "p", 1) != 1)  error_exit("call_child() write() error!\n", ERR_EXIT);
+void call_parent(int call_parent_list){
+	if( write(call_parent_list, "c", 1) != 1 )  ERROR_EXIT("call_parent() error!\n");
 }
 
-void wait_child(int wait_child_fd)
-{
+void wait_parent(int wait_parent_list){
 	char c;
-	if( read(wait_child_fd, &c, 1) != 1 )  error_exit("wait_child() read() error!\n", ERR_EXIT);
-	if( c != 'c' )  error_exit("wait_child() wrong data!\n", ERR_EXIT);
+	if( read(wait_parent_list, &c, 1) != 1 ){ERROR_EXIT("wait_parent()  error!\n");}
+	if( c != 'p' )  ERROR_EXIT("wait_parent() wrong input!\n");
 }
+
