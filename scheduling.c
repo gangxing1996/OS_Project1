@@ -115,36 +115,31 @@ int choose_next(struct process* process_input, struct Scheduler_State* state_ptr
 
 void schedule_parent(struct Scheduler_State* state,struct process* process_input,int call_child_list[],int wait_child_list[],int* queue_front,int* queue_back,int queue[]){
 	while(1){
-		//XXX 1. if CPU has running process, check whether the currently running process is finished
+		
 		if( CPU_IS_RUNNING( state ) ){
 			if( process_input[ state->RUNNING_IDX ].execution_time == 0 )
 			{
-				CPU_running_process_finished( process_input,state );
-				if(  state->num_finished_process == state->num_process  )  break; // all process finished, break while(1)
+				CPU_running_process_finished( process_input,state );//check the running is finished or not
+				if(  state->num_finished_process == state->num_process  )  break; // done and out
 			}
 		}
 
-		//XXX 2. check if there are any ready process arriving in. If so, fork and execute them
-		check_process_ready( process_input, state , queue_front, queue_back, queue, call_child_list, wait_child_list ); //TODO
 
-		//XXX 3. select next running process. If still the same process, do nothing. If not, "Context Switch"
+		check_process_ready( process_input, state , queue_front, queue_back, queue, call_child_list, wait_child_list ); 
+
 		int next_process = choose_next( process_input, state , queue_front, queue_back, queue);
-			
+		// choose next to change process to ex	
 		if( next_process != CPU_IS_FREE ){
-			//XXX : cpu has the next running process
-			call_child( call_child_list[ next_process ] ); //TODO
+			call_child( call_child_list[ next_process ] );
 
 			if( CPU_IS_RUNNING( state ) ){
 				if( state->RUNNING_IDX != next_process ){
-					//XXX: the running process in CPU isn't the next process to run
-					//XXX: then do "Context Switch"
-					//TODO : fixed RR bug : "push ready queue of preempted_out() needs last RUNNING_IDX, but preempted_in() changes that value"
+					
 					preempted_out( process_input, state ,queue_front, queue_back, queue);
 					preempted_in( process_input, state, next_process , queue_front, queue_back, queue);
 
-				}//XXX: else : CPU has running process == next running process : do nothing
-			}else{  //XXX : the CPU has no running process
-				//XXX : just preempt in, without preempting out
+				}
+			}else{  //if cpu is free
 				preempted_in( process_input, state, next_process ,queue_front, queue_back, queue); 
 			}
 		}
