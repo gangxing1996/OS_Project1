@@ -1,124 +1,168 @@
 //scheduling.c
-
-#define ERR_EXIT 1
-#define _GNU_SOURCE 
-#include <stdio.h> 
-#include <sys/wait.h> 
-#include "process.h" 
-#include "priority.h" 
-#include "scheduling.h" 
+#define _GNU_SOURCE //XXX 
+#include <stdio.h> // scanf() fprintf(stderr)
+#include <sys/wait.h> // wait()
+#include "process.h" // process_execute()  
+#include "priority.h" // CPU_preempt_in() CPU_preempt_out()
 #include "rr_queue.h" 
+#include "call_wait.h" // call_child() wait_child()
 #include "common.h" 
 
-int CPU_has_running_process_or_not( const struct Scheduler_State* state_ptr ){
-	return ( state_ptr->CPU_has_idx_running_process != CPU_HAS_NO_RUNNING_PROCESS );
-}
-
-void set_CPU_has_running_process( struct Scheduler_State* state_ptr, int CPU_has_idx_running_process ){
-	state_ptr->CPU_has_idx_running_process = CPU_has_idx_running_process;
-}
-
-void set_CPU_has_no_running_process( struct Scheduler_State* state_ptr ){
-	state_ptr->CPU_has_idx_running_process = CPU_HAS_NO_RUNNING_PROCESS;
-}
-
-int CPU_running_process_finished_or_not( struct process* process_input, const struct Scheduler_State* state_ptr ){
-	return ( process_input[ state_ptr->CPU_has_idx_running_process ].execution_time == 0 );
-}
-void CPU_running_process_finished(struct process* process_input, struct Scheduler_State* state_ptr){
+#define CPU_IS_RUNNING(state)	(state->RUNNING_IDX != -1)
 
 
+void CPU_running_process_finished(struct process* process_input, struct Scheduler_State* state_ptr)
+	{
 	(state_ptr->num_finished_process)++; 
-	process_input[ state_ptr->CPU_has_idx_running_process ].TASK_RUNNING_or_not = 0;
-	set_CPU_has_no_running_process( state_ptr );
+	process_input[ state_ptr->RUNNING_IDX ].IS_RUNNING = 0;
+	state_ptr->RUNNING_IDX = CPU_IS_FREE;
 	wait(NULL);
-}
-void check_process_ready_arrive(struct process* process_input, struct Scheduler_State* state_ptr, 
-int* RR_ready_queue_front, int* RR_ready_queue_back, int RR_ready_queue[],
-int call_child_fd[], int wait_child_fd[] ){
+	}
+
+void check_process_ready(struct process* process_input, struct Scheduler_State* state_ptr, int* queue_front, int* queue_back, int queue[],int call_child_list[], int wait_child_list[] ){
 	for(int i=0;i<(state_ptr->num_process);i++){
-		if( process_input[i].ready_time == state_ptr->elapsed_unit_time ){
-			process_input[i].pid = ready_process_execute( process_input[i], 
-				&call_child_fd[i], &wait_child_fd[i] );
+		if( process_input[i].ready_time == state_ptr->past_time ){
+			process_input[i].pid = process_execute( process_input[i], &call_child_list[i], &wait_child_list[i] );
 
-			process_input[i].TASK_RUNNING_or_not = 1;
+			process_input[i].IS_RUNNING = 1;
 
-			if( state_ptr->scheduling_policy == POLICY_RR )
-				push_queue(RR_ready_queue_front, RR_ready_queue_back, RR_ready_queue, i ); 
+			if( state_ptr->policy == POLICY_RR )
+				push_queue( queue_back, queue, i ); 
 
 
 		}
 	}
 }
 
-void process_preempted_in(struct process* process_input, struct Scheduler_State* state_ptr, int idx_next_running_process,
-int* RR_ready_queue_front, int* RR_ready_queue_back, int RR_ready_queue[] ){
-
-
-	set_CPU_has_running_process( state_ptr, idx_next_running_process );
-
-
-	if( state_ptr->scheduling_policy == POLICY_RR ){
-		state_ptr->RR_time_slice_start_running_count_time = 0;
-		pop_queue(RR_ready_queue_front, RR_ready_queue_back);
+void preempted_in(struct process* process_input, struct Scheduler_State* state_ptr, int next_process,int* queue_front, int* queue_back, int queue[] )
+{
+	state_ptr->RUNNING_IDX = next_process;//change to next progress
+	if( state_ptr->policy == POLICY_RR ){
+		state_ptr->rr_timer = 0;
+		pop_queue(queue_front, queue_back); 
 	}
 }
 
-void process_preempted_out(struct process* process_input, struct Scheduler_State* state_ptr,
-int* RR_ready_queue_front, int* RR_ready_queue_back, int RR_ready_queue[] ){
-
-
-	if( state_ptr->scheduling_policy == POLICY_RR )
-		push_queue(RR_ready_queue_front, RR_ready_queue_back, RR_ready_queue, state_ptr->CPU_has_idx_running_process ); 
-
+void preempted_out(struct process* process_input, struct Scheduler_State* state_ptr,int* queue_front, int* queue_back, int queue[] )
+{
+	if( state_ptr->policy == POLICY_RR ) push_queue( queue_back, queue, state_ptr->RUNNING_IDX ); 
 }
 
 
-int next_running_process(struct process* process_input, struct Scheduler_State* state_ptr, 
-int* RR_ready_queue_front, int* RR_ready_queue_back, int RR_ready_queue[] ){
+int choose_next(struct process* process_input, struct Scheduler_State* state_ptr, int* queue_front, int* queue_back, int queue[] ){
 
-	if( (state_ptr->scheduling_policy == POLICY_FIFO || state_ptr->scheduling_policy == POLICY_SJF) && CPU_has_running_process_or_not( state_ptr ) )
-		return state_ptr->CPU_has_idx_running_process; 
 
-	int idx_next_running_process = CPU_HAS_NO_RUNNING_PROCESS; 
+	if( (state_ptr->policy == POLICY_FIFO || state_ptr->policy == POLICY_SJF) && CPU_IS_RUNNING( state_ptr ) )
+		return state_ptr->RUNNING_IDX; // continue to run
 
-	if( state_ptr->scheduling_policy == POLICY_SJF || state_ptr->scheduling_policy == POLICY_PSJF ){
+	int next_process = CPU_IS_FREE; //init
+
+	if( state_ptr->policy == POLICY_SJF || state_ptr->policy == POLICY_PSJF ){
 		
 		for(int i=0;i<(state_ptr->num_process);i++){
-			if( process_input[i].TASK_RUNNING_or_not == 0 )  continue;
-			if( idx_next_running_process == CPU_HAS_NO_RUNNING_PROCESS )
-				idx_next_running_process = i;
-			if( process_input[i].execution_time < process_input[ idx_next_running_process ].execution_time ) 
-				idx_next_running_process = i;
+			//to find the small excution time with small order
+			if( process_input[i].IS_RUNNING == 0 )  continue;
+			if( next_process == CPU_IS_FREE )
+				next_process = i;
+			if( process_input[i].execution_time < process_input[ next_process ].execution_time ) 
+			{ 
+				next_process = i;
+			}
+			//choose the smaller order
+				
 		}
 
-	}else if( state_ptr->scheduling_policy == POLICY_FIFO ){
+	}else if( state_ptr->policy == POLICY_FIFO ){
+		
+
 
 		for(int i=0;i<(state_ptr->num_process);i++){
-			if( process_input[i].TASK_RUNNING_or_not == 1 ){
-				idx_next_running_process = i;  break; //for i
+			if( process_input[i].IS_RUNNING == 1 )//according to ready time
+			{
+				next_process = i;  
+				break; 
 			}
 		}
-//Round-Robin
+//-----------------for RR--------
 	}else{ 
 
-		if( queue_empty(RR_ready_queue_front, RR_ready_queue_back) ){
-			idx_next_running_process = state_ptr->CPU_has_idx_running_process; // same process keeps running
-			if( state_ptr->RR_time_slice_start_running_count_time == RR_TIME_SLICE_UNIT_TIME )
-				state_ptr->RR_time_slice_start_running_count_time = 0;
-		}else if( !CPU_has_running_process_or_not( state_ptr ) ){
-			idx_next_running_process = queue_front(RR_ready_queue_front, RR_ready_queue_back, RR_ready_queue);
-		}else if( state_ptr->RR_time_slice_start_running_count_time == RR_TIME_SLICE_UNIT_TIME ){ 
-			idx_next_running_process = queue_front(RR_ready_queue_front, RR_ready_queue_back, RR_ready_queue);
-		}else{ 
-			idx_next_running_process = state_ptr->CPU_has_idx_running_process; // same process keeps running
+		if( *queue_front >= *queue_back )//empty not change
+		{
+			next_process = state_ptr->RUNNING_IDX; 
+			if( state_ptr->rr_timer == QUANTUM_TIME )
+				state_ptr->rr_timer = 0;// reset timer, if to Qtime
 		}
-
-
+		else if( !CPU_IS_RUNNING( state_ptr ) )
+		{
+			//CPU is free 
+			next_process = queue[ (*queue_front) ];
+		}
+		else if( state_ptr->rr_timer == QUANTUM_TIME )
+		{ 
+			next_process = queue[ (*queue_front) ];
+		}
+		else
+		{ 
+			next_process = state_ptr->RUNNING_IDX; // still have time
+		}
 	}
 	
-	return idx_next_running_process;
+	return next_process;
 }
-int scheduler_finished_or_not( const struct Scheduler_State* state_ptr ){
-	return ( state_ptr->num_finished_process == state_ptr->num_process );
+
+
+
+
+void schedule_parent(struct Scheduler_State* state,struct process* process_input,int call_child_list[],int wait_child_list[],int* queue_front,int* queue_back,int queue[]){
+	while(1){
+		//XXX 1. if CPU has running process, check whether the currently running process is finished
+		if( CPU_IS_RUNNING( state ) ){
+			if( process_input[ state->RUNNING_IDX ].execution_time == 0 )
+			{
+				CPU_running_process_finished( process_input,state );
+				if(  state->num_finished_process == state->num_process  )  break; // all process finished, break while(1)
+			}
+		}
+
+		//XXX 2. check if there are any ready process arriving in. If so, fork and execute them
+		check_process_ready( process_input, state , queue_front, queue_back, queue, call_child_list, wait_child_list ); //TODO
+
+		//XXX 3. select next running process. If still the same process, do nothing. If not, "Context Switch"
+		int next_process = choose_next( process_input, state , queue_front, queue_back, queue);
+			
+		if( next_process != CPU_IS_FREE ){
+			//XXX : cpu has the next running process
+			call_child( call_child_list[ next_process ] ); //TODO
+
+			if( CPU_IS_RUNNING( state ) ){
+				if( state->RUNNING_IDX != next_process ){
+					//XXX: the running process in CPU isn't the next process to run
+					//XXX: then do "Context Switch"
+					//TODO : fixed RR bug : "push ready queue of preempted_out() needs last RUNNING_IDX, but preempted_in() changes that value"
+					preempted_out( process_input, state ,queue_front, queue_back, queue);
+					preempted_in( process_input, state, next_process , queue_front, queue_back, queue);
+
+				}//XXX: else : CPU has running process == next running process : do nothing
+			}else{  //XXX : the CPU has no running process
+				//XXX : just preempt in, without preempting out
+				preempted_in( process_input, state, next_process ,queue_front, queue_back, queue); 
+			}
+		}
+		
+		//set counter for a UNIT TIME
+		if( CPU_IS_RUNNING( state ) ){
+			process_input[ state->RUNNING_IDX ].execution_time--;
+			
+		if( state->policy == POLICY_RR )  
+			state->rr_timer++; 
+		}
+		
+		state->past_time++;
+		EXECUTE_UNIT_TIME;
+		
+		if( next_process != CPU_IS_FREE ){
+			//wait child to run
+			wait_child( wait_child_list[ next_process ] ); 
+		}
+	}
 }
